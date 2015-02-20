@@ -11,6 +11,7 @@
 	> required :: requires the field
 	> required[fieldName] :: requires the field if 'fieldName' has any value
 	> required[fieldName=value] :: requires the field if 'fieldName' has a value of 'value'
+	> required[atleastX=fieldName1|fieldNameN...] :: requires the field if at least X number of fields specified have a value
 	> (!)matches[fieldName] :: field must match 'fieldName'
 	> alpha :: field must only contain alpha characters
 	> alpha_dash :: field must only contain alpha and hyphen characters
@@ -907,9 +908,8 @@
 						<cfset arrayAppend(local.fieldLabels, getFieldLabel(local.k))>
 					</cfloop>
 					<cfset setFieldErrorMessage(arguments.field, "required", "You must supply a value for one of the following fields: #arrayToList(local.fieldLabels, ", ")#.")>
-					<cfreturn false>
 				</cfif>
-				<cfreturn true>
+                <cfreturn false>
 			</cfif>
 		<cfelseif structKeyExists(variables.rc, local.arg)>
 			<cfif listLen(arguments.argument, "=") EQ 2 AND len(trim(local.val)) GT 0>
