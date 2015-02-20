@@ -1,8 +1,12 @@
 <cfscript>
+	// include configuration
+	include "config.cfm";
+
 	isACF = listFindNoCase("railo,lucee", server.coldfusion.productname) == 0;
 
 	// variable references
-	configField = "validationcfg";
+	validationField = "validationcfg";
+	validation = {};
 	
 	// return object
 	result = {
@@ -14,30 +18,10 @@
 	
 	try {
 		// parse the validation configuration
-		config = {};
-		if (structKeyExists(form, configField)) {
-			try {
-				config = deserializeJson(form[configField]);	
-			} catch (any e) {
-				writedump(form[configField]); abort;
-				throw (message = "Unable to deserialize validation configuration. Validation has failed.", type="ValidatorException");
-			}
-		}
+		validation = parseValidation();
 		
 		// validation
-		oValidator = createObject('#request.assets.cfcs#utils/FormValidator').init(form);
-		
-		// loop the configuration and set all validation
-		for (field in config) {
-			oValidator.setValidation(field, config[field].label, config[field].validation);
-			
-			// custom error messages
-			if (structKeyExists(config[field], "errors") && isStruct(config[field].errors)) {
-				for (routine in config[field].errors) {
-					oValidator.setFieldErrorMessage(field, routine, config[field].errors[routing]);
-				}
-			}
-		}
+		oValidator = setupValidator();
 		
 		// validate the form
 		result.isValid = oValidator.run(true);
@@ -48,9 +32,12 @@
 	// custom exception within the validator
 	} catch (ValidatorException e) {
 		result.message = e.message;
-		
+	} catch (InvalidComponentException e) {
+		result.message = e.message;
+			
 	// application exception
 	} catch (any e) {
+		writedump(e); abort;
 		result.message = "There was an error validating the form.";
 	} finally {
 		result.success = len(result.message) == 0;
@@ -67,5 +54,55 @@
 		pc.getResponse().setContentType("application/json");
 		writeOutput(serializeJson(result));
 		abort;
+	}
+	
+	/**
+	 * Parse the validation configuration from the FORM
+	 * @output false
+	 * @return Struct
+	 */
+	public struct function parseValidation () {
+		var validation = {};
+		
+		if (structKeyExists(form, validationField)) {
+			try {
+				validation = deserializeJson(form[validationField]);	
+			} catch (any e) {
+				throw (message = "Unable to deserialize validation configuration. Validation has failed.", type="ValidatorException");
+			}
+		}
+		
+		return validation;
+	}
+	
+	/**
+	 * Sets up the form validator with the form information and all validation
+	 * @output false
+	 * @return FormValidator
+	 */
+	public any function setupValidator () {
+		var validator = createObject('#config.componentLocation##config.componentName#');
+		
+		if (!isInstanceOf(validator, "FormValidator")) {
+			throw (message="Invalid component specified",
+				   detail="Component must be a subclass of FormValidator",
+				   type="InvalidComponentException");
+		}
+		
+		validator.init(form);
+		
+		// loop the configuration and set all validation
+		for (var field in validation) {
+			validator.setValidation(field, validation[field].label, validation[field].validation);
+			
+			// custom error messages
+			if (structKeyExists(validation[field], "errors") && isStruct(validation[field].errors)) {
+				for (var routine in validation[field].errors) {
+					validator.setFieldErrorMessage(field, routine, validation[field].errors[routine]);
+				}
+			}
+		}
+		
+		return validator;
 	}
 </cfscript>
