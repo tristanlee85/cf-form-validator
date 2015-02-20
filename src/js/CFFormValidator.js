@@ -4,10 +4,13 @@
 		rxpRoutine = /(\!)?([^\[\],]+)(?:\[([^\]]*)\])?/gi,
 
 		// validation URL
-		defaultURL = "remote/remoteValidator.cfm",
+		defaultURL = "/remote/remoteValidator.cfm",
 
 		// collection for validation of fields that don't exist
 		customValidation = {},
+
+		// errors returned by validation
+		errors = [],
 
 		/**
 		 * Gets the routine name from the specified validation routine
@@ -16,6 +19,17 @@
 		 */
 		getRoutine = function (validation) {
 			return rxpRoutine.exec(validation)[2];
+		},
+
+		/**
+		 * Outputs a warning message to the console (if available)
+		 * @param  {String} message
+		 * @return {void}
+		 */
+		warn = function (message) {
+			if (console && console.warn) {
+				console.warn(message);
+			}
 		};
 
 	/**
@@ -47,7 +61,7 @@
 			var $el = $(el);
 
 			if ($el.length !== 1 || !$el.is("form")) {
-				throw "Unable to set form. Argument 'el' does not represent a valid FORM element.";
+				throw "Unable to set form. Argument does not represent a valid FORM element.";
 			}
 
 			this.$form = $el;
@@ -96,7 +110,7 @@
 							var $this = $(this);
 
 							if (!$this.prop("name") || $this.prop("name").length === 0) {
-								console && console.warn("The specified field must have a name");
+								warn("The specified field must have a name");
 								return;
 							}
 
@@ -104,7 +118,7 @@
 							if (name === null) {
 								name = $(this).prop("name");
 							} else if (name !== $(this).prop("name")) {
-								console && console.warn("The specified field contains elements with different names");
+								warn("The specified field contains elements with different names");
 								return;
 							}
 						});
@@ -126,14 +140,14 @@
 
 				// get all of the input fields with validation
 				$fields = $(":input", this.getForm()).filter(function (idx, el) {
-					return !!$(el).data("validation")
+					return !!$(el).data("validation");
 				}),
 
 				// validation config
 				validationCfg = {};
 
 			// add temporary fields to the collection
-			$fields = $fields.add($($.map(customValidation, function(el){return $.makeArray(el)})));
+			$fields = $fields.add($($.map(customValidation, function(el){return $.makeArray(el);})));
 
 			// iterate all fields and build the validation
 			$fields.each(function (idx, el) {
@@ -329,6 +343,35 @@
 
 			// append validation
 			$.post(this.getValidationURL(), data);
+		},
+
+		/**
+		 * Displays any errors messages to the validation error container for the corresponding
+		 * field (if it exists)
+		 * @return {void}
+		 */
+		displayErrors: function () {
+			var $form = this.getForm(),
+				$containers = $(".validation-error", $form),
+				i = errors.length,
+				filterField = function () {
+					return $(this).prop("name") === errors[i].field || $(this).data("field") === errors[i].field;
+				};
+
+			// iterate over the errors, locating the error container for the field
+			// and set the error message
+			while (i--) {
+				$containers.filter(filterField).html(errors[i].error);
+			}
+		},
+
+		/**
+		 * Clears the array of errors and all messages on the form
+		 * @return {void}
+		 */
+		clearErrors: function () {
+			errors = [];
+			$(".validation-error", $form).empty();
 		}
 	});
 }(window, $));
