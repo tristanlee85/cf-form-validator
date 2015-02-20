@@ -3,14 +3,18 @@
 		// regex for parsing validation routines
 		rxpRoutine = /(\!)?([^\[\],]+)(?:\[([^\]]*)\])?/gi,
 
-		// validation URL
-		defaultURL = "/remote/remoteValidator.cfm",
-
 		// collection for validation of fields that don't exist
 		customValidation = {},
 
 		// errors returned by validation
 		errors = [],
+		
+		// debugging 
+		debug = window.console || {
+			log: function (message) {},
+			warn: function (message) {},
+			error: function (message) {}
+		},
 
 		/**
 		 * Gets the routine name from the specified validation routine
@@ -19,54 +23,60 @@
 		 */
 		getRoutine = function (validation) {
 			return rxpRoutine.exec(validation)[2];
-		},
-
-		/**
-		 * Outputs a warning message to the console (if available)
-		 * @param  {String} message
-		 * @return {void}
-		 */
-		warn = function (message) {
-			if (console && console.warn) {
-				console.warn(message);
-			}
 		};
+	
+	
+	// jQuery validator plugin
+	$.fn.validator = function (method, option, value) {
+		var validator,
+			
+			// set options
+			sets = {
+				validationurl: "setValidationUrl"
+			};
+		
+		// ensure the validator has been setup for the element
+		if (!this.is("form")) {
+			throw "Validator can only be invoked on FORM elements";	
+		}
+		
+		// initialize the validator if it doesn't exist
+		if (!(this.data("validator") instanceof CFFormValidator)) {
+			validator = new CFFormValidator(this);
+			this.data("validator", validator);
+		} else {
+			validator = this.data("validator");
+		}
+		
+		switch (method) {
+			// get the CFFormValidator instance
+			case "get":
+				return validator;	
+						
+			// validates the form and returns the jqXHR Promise interface
+			case "validate":
+				return validator.validate(option);
+		}
+		
+		return this;
+	}
 
 	/**
 	 * Creates a new form validator
 	 * @constructor
 	 * @param {String|jQuery|HTMLElement} form the form to be validated
-	 * @param {String} [url] the URL to POST to for validation
 	 */
-	window.CFFormValidator = function (form, url) {
-		this.$form = null;
-
-		// set the form if supplied
-		if (form) {
-			this.setForm(form);
+	window.CFFormValidator = function (form) {
+		this.$form = $(form);
+		
+		// validate and set the element
+		if (this.$form.length !== 1 || !this.$form.is("form")) {
+			this.$form = null;
+			throw "Unable to set form. Argument does not represent a valid FORM element.";
 		}
-
-		this.setValidationURL(url || defaultURL);
-
 	};
 
 	$.extend(CFFormValidator.prototype, {
-
-		/**
-		 * Sets the form to validate against
-		 * @param {String|jQuery|HTMLElement) el
-		 * @returns {void}
-		 */
-		setForm: function (el) {
-			var $el = $(el);
-
-			if ($el.length !== 1 || !$el.is("form")) {
-				throw "Unable to set form. Argument does not represent a valid FORM element.";
-			}
-
-			this.$form = $el;
-		},
-
 		/**
 		 * Gets the form being validated
 		 * @returns {jQuery}
@@ -110,7 +120,7 @@
 							var $this = $(this);
 
 							if (!$this.prop("name") || $this.prop("name").length === 0) {
-								warn("The specified field must have a name");
+								debug.warn("The specified field must have a name");
 								return;
 							}
 
@@ -118,7 +128,7 @@
 							if (name === null) {
 								name = $(this).prop("name");
 							} else if (name !== $(this).prop("name")) {
-								warn("The specified field contains elements with different names");
+								debug.warn("The specified field contains elements with different names");
 								return;
 							}
 						});
@@ -319,10 +329,13 @@
 
 		/**
 		 * Validates the form by POSTing all fields to the URL and processing the response
+		 * @param {Function} [callback] function to call once the form has been validated
 		 * @returns {Promise}
 		 */
-		validate: function () {
+		validate: function (callback) {
 			var
+				validator = this,
+				
 				// validation field
 				$validation = $("<input>").prop({type: "hidden", name: "validationcfg"}),
 
@@ -331,7 +344,16 @@
 				data,
 
 				// validation config
-				validationCfg = this.buildValidation();
+				validationCfg = this.buildValidation(),
+				display = $form.data("validation-displayerrors") === undefined || $form.data("validation-displayerrors") === true,
+				
+				// error handler
+				xhrError = function (xhr, status, error) {
+					debug.error("XHR error: " + status + " (" + error.message + ")");
+				};
+			
+			// clear previous errors
+			this.clearErrors();
 
 			// append validation config to the form
 			$validation.val(JSON.stringify(validationCfg));
@@ -342,7 +364,28 @@
 			$validation.remove();
 
 			// append validation
-			$.post(this.getValidationURL(), data);
+			return $.post(this.getValidationURL(),data)
+				.done(function (response, status, xhr) {
+					try {
+						// ensure the response is parsed correctly
+						if (response.success === true) {
+							if (!response.isValid) {
+								errors = response.errors;
+								validator.displayErrors();
+							}
+							
+							if ($.type(callback) === "function") {
+								callback.apply(validator, [response.isValid, response.errors, response.message]);
+							}
+						} else {
+							throw "Unable to parse response from validator.";
+						}
+					} catch (e) {
+						xhrError(xhr, "XHR successful, but: " + e.message, e);
+					}
+				})
+				
+				.fail(xhrError);
 		},
 
 		/**
@@ -355,13 +398,13 @@
 				$containers = $(".validation-error", $form),
 				i = errors.length,
 				filterField = function () {
-					return $(this).prop("name") === errors[i].field || $(this).data("field") === errors[i].field;
+					return $(this).prop("name") === errors[i].FIELD || $(this).data("field") === errors[i].FIELD;
 				};
 
 			// iterate over the errors, locating the error container for the field
 			// and set the error message
 			while (i--) {
-				$containers.filter(filterField).html(errors[i].error);
+				$containers.filter(filterField).html(errors[i].MESSAGE);
 			}
 		},
 
@@ -371,7 +414,7 @@
 		 */
 		clearErrors: function () {
 			errors = [];
-			$(".validation-error", $form).empty();
+			$(".validation-error", this.getForm()).empty();
 		}
 	});
 }(window, $));
