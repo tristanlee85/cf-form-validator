@@ -1,3 +1,4 @@
+<cfsetting showdebugoutput="false" />
 <cfscript>
 	// include configuration
 	include "config.cfm";
@@ -83,11 +84,11 @@
 	public any function setupValidator () {
 		var validator = createObject('#config.componentLocation##config.componentName#');
 		
-		if (!isInstanceOf(validator, "FormValidator")) {
+		/*if (!isInstanceOf(validator, "FormValidator")) {
 			throw (message="Invalid component specified",
 				   detail="Component must be a subclass of FormValidator",
 				   type="InvalidComponentException");
-		}
+		}*/
 		
 		validator.init(form);
 		
